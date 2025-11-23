@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EcoMaps</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- TailwindCSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="manifest" href="/static/manifest.json" />
+  <meta name="theme-color" content="#3B82F6" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="EcoMaps" />
+</head>
+<body class="h-full" style="background-color: var(--bg);">
+  <div id="app" class="min-h-screen flex flex-col">
+    <!-- Top Bar -->
+    <header class="sticky top-0 z-50">
+      <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
+        <!-- Offline Indicator -->
+        <div id="offlineIndicator" class="hidden fixed top-16 left-1/2 transform -translate-x-1/2 z-[1000] px-4 py-2 rounded-lg text-sm" style="background: rgba(251, 191, 36, 0.9); color: #78350f; border: 1px solid rgba(251, 191, 36, 0.5);">
+          <span>📡</span> <span>You're offline - using cached data</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl shadow-glass flex items-center justify-center text-white font-bold text-lg" style="background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);">
+            🌍
+          </div>
+          <div class="heading"><b>EcoMaps</b></div>
+        </div>
+        <div class="ml-auto flex items-center gap-2">
+          <button id="themeToggle" class="animated-btn px-3 py-2 rounded-xl text-sm flex items-center justify-center" title="Toggle theme">
+            <span id="themeIcon" class="text-lg">🌙</span>
+          </button>
+          <button id="geolocateBtn" class="glass-btn px-3 py-2 rounded-xl text-sm">Use My Location</button>
+          <button id="shareBtn" class="glass-btn px-3 py-2 rounded-xl text-sm">Share Route</button>
+          <button id="clearBtn" class="glass-btn px-3 py-2 rounded-xl text-sm">Clear Route</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Content -->
+    <main class="flex-1 max-w-7xl mx-auto w-full p-4">
+      <!-- Top Row: Search and Quick Stats -->
+      <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-4">
+        <!-- Search Card - Takes 2 columns on large screens -->
+        <div class="lg:col-span-2 glass-card p-4 rounded-2xl relative" style="overflow: visible;">
+          <div class="font-semibold mb-3">Plan Route</div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="small-text" style="color: var(--text-secondary);">Start</label>
+              <input id="startInput" type="text" placeholder="Search start location" class="text-input" />
+              <ul id="startSuggest" class="suggest-list hidden"></ul>
+            </div>
+            <div>
+              <label class="small-text" style="color: var(--text-secondary);">Destination</label>
+              <input id="endInput" type="text" placeholder="Search destination" class="text-input" />
+              <ul id="endSuggest" class="suggest-list hidden"></ul>
+            </div>
+          </div>
+          <div class="flex gap-3 mt-3">
+            <button id="routeBtn" class="animated-btn px-4 py-2 rounded-xl flex-1">Get Route</button>
+            <div class="relative">
+              <button id="historyBtn" class="glass-btn px-4 py-2.5 rounded-xl text-base font-medium flex items-center gap-2 min-w-[120px] justify-center">
+                <span>History</span> <span>▼</span>
+              </button>
+              <div id="historyDropdown" class="hidden absolute top-full left-0 right-0 mt-1 glass-card rounded-xl overflow-hidden max-h-60 overflow-y-auto z-50">
+                <div id="historyList" class="p-2 space-y-1"></div>
+                <div class="border-t p-2" style="border-color: var(--border);">
+                  <button id="clearHistoryBtn" class="small-text w-full text-left" style="color: var(--primary);">Clear History</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <span id="apiWarning" class="small-text hidden mt-2 block" style="color: var(--text-secondary);">OpenWeather key missing</span>
+        </div>
+
+        <!-- Quick Stats - Takes 2 columns on large screens -->
+        <div class="lg:col-span-2 grid grid-cols-3 gap-3">
+          <div class="glass-card p-4 rounded-2xl text-center">
+            <div class="small-text mb-1" style="color: var(--text-secondary);">Distance</div>
+            <div id="distanceOut" class="text-xl font-semibold">-</div>
+          </div>
+          <div class="glass-card p-4 rounded-2xl text-center">
+            <div class="small-text mb-1" style="color: var(--text-secondary);">Time</div>
+            <div id="durationOut" class="text-xl font-semibold">-</div>
+          </div>
+          <div class="glass-card p-4 rounded-2xl text-center">
+            <div class="small-text mb-1" style="color: var(--text-secondary);">Safety</div>
+            <div id="safetyBadge" class="inline-flex items-center justify-center small-text mt-1 px-2 py-1 rounded-full" style="background: var(--surface); color: var(--text); border: 1px solid var(--border);">OK</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Content Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        <!-- Left Column -->
+        <section class="lg:col-span-1 flex flex-col gap-4">
+
+          <!-- Collapsible Environmental Section -->
+          <div class="glass-card rounded-2xl overflow-hidden">
+            <button id="envToggle" class="w-full p-4 flex items-center justify-between hover:bg-opacity-80 transition-all" style="background: var(--surface);">
+              <div class="font-semibold flex items-center gap-2">
+                <span>🌱</span> <span>Environmental Impact</span>
+              </div>
+              <span id="envToggleIcon">▼</span>
+            </button>
+            <div id="envContent" class="hidden p-4 pt-0">
+              <div class="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                  <div class="small-text mb-1" style="color: var(--text-secondary);">Eco Score</div>
+                  <div id="envScoreValue" class="text-lg font-semibold" style="color: var(--primary);">-</div>
+                  <div class="w-full rounded-full mt-1" style="background: var(--border); height: 6px;">
+                    <div id="envScoreBar" class="rounded-full" style="background: var(--primary); height: 6px; width: 0%; transition: width 0.5s ease;"></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="small-text mb-1" style="color: var(--text-secondary);">CO₂ Emissions</div>
+                  <div id="co2Emissions" class="text-sm font-semibold">-</div>
+                  <div class="small-text mt-1" style="color: var(--text-secondary);">Fuel: <span id="fuelUsed" class="font-semibold" style="color: var(--text);">-</span></div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 small-text pt-2 border-t" style="border-color: var(--border);">
+                <span>🌳</span>
+                <span>Trees: <strong id="treesOffset" style="color: var(--text);">-</strong></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Weather Panel - Collapsible -->
+          <div class="glass-card rounded-2xl overflow-hidden">
+            <button id="weatherToggle" class="w-full p-4 flex items-center justify-between hover:bg-opacity-80 transition-all" style="background: var(--surface); border-bottom: 1px solid var(--border);">
+              <div class="font-semibold flex items-center gap-2">
+                <span>🌤️</span> <span>Weather Along Route</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <div id="sunInfo" class="small-text hidden lg:block" style="color: var(--text-secondary);">-</div>
+                <span id="weatherToggleIcon">▼</span>
+              </div>
+            </button>
+            <div id="weatherContent" class="hidden">
+              <div id="weatherList" class="max-h-64 overflow-auto p-2 space-y-2">
+                <!-- Filled dynamically -->
+              </div>
+            </div>
+          </div>
+
+          <!-- User Preferences -->
+          <div class="glass-card rounded-2xl overflow-hidden">
+            <button id="prefsToggle" class="w-full p-4 flex items-center justify-between hover:bg-opacity-80 transition-all" style="background: var(--surface);">
+              <div class="font-semibold flex items-center gap-2">
+                <span>⚙️</span> <span>Preferences</span>
+              </div>
+              <span id="prefsToggleIcon">▼</span>
+            </button>
+            <div id="prefsContent" class="hidden p-4 pt-0">
+              <div class="space-y-3">
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" id="prefAvoidRain" class="w-4 h-4 rounded" style="accent-color: var(--primary);">
+                  <span class="text-sm">Avoid rainy routes</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" id="prefEcoFriendly" class="w-4 h-4 rounded" style="accent-color: var(--primary);">
+                  <span class="text-sm">Prefer eco-friendly routes</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" id="prefAvoidPollution" class="w-4 h-4 rounded" style="accent-color: var(--primary);">
+                  <span class="text-sm">Avoid high pollution areas</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" id="prefShorterRoutes" class="w-4 h-4 rounded" style="accent-color: var(--primary);">
+                  <span class="text-sm">Prefer shorter routes</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Offline Routes -->
+          <div class="glass-card rounded-2xl overflow-hidden">
+            <button id="offlineRoutesToggle" class="w-full p-4 flex items-center justify-between hover:bg-opacity-80 transition-all" style="background: var(--surface);">
+              <div class="font-semibold flex items-center gap-2">
+                <span>💾</span> <span>Offline Routes</span>
+              </div>
+              <span id="offlineRoutesToggleIcon">▼</span>
+            </button>
+            <div id="offlineRoutesContent" class="hidden p-4 pt-0">
+              <div id="offlineRoutesList" class="space-y-2 max-h-64 overflow-y-auto">
+                <!-- Filled dynamically -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Personalized Recommendations -->
+          <div id="recommendationsPanel" class="hidden glass-card p-4 rounded-2xl">
+            <div class="font-semibold mb-3 flex items-center gap-2">
+              <span>💡</span> <span>Recommendations</span>
+            </div>
+            <div id="recommendationsList" class="space-y-2">
+              <!-- Filled dynamically -->
+            </div>
+          </div>
+
+          <!-- Quick Actions - Horizontal -->
+          <div class="glass-card p-4 rounded-2xl">
+            <div class="font-semibold mb-3 text-sm">Quick Actions</div>
+            <div class="flex gap-2">
+              <button id="compareRoutesBtn" class="flex-1 glass-btn p-3 rounded-xl text-center">
+                <div class="text-xl mb-1">🔄</div>
+                <div class="text-xs font-semibold">Compare</div>
+              </button>
+              <button id="bestTimeBtn" class="flex-1 glass-btn p-3 rounded-xl text-center">
+                <div class="text-xl mb-1">⏰</div>
+                <div class="text-xs font-semibold">Best Time</div>
+              </button>
+            </div>
+          </div>
+
+          <!-- Route Comparison Results -->
+          <div id="routeComparison" class="hidden glass-card p-4 rounded-2xl">
+            <div class="font-semibold mb-3 text-sm flex items-center gap-2">
+              <span>🔄</span> <span>Alternative Routes</span>
+            </div>
+            <div class="space-y-2 max-h-64 overflow-y-auto">
+              <!-- Filled dynamically -->
+            </div>
+          </div>
+
+          <!-- Best Time Results -->
+          <div id="bestTimeResults" class="hidden glass-card p-4 rounded-2xl">
+            <div class="font-semibold mb-3 text-sm flex items-center gap-2">
+              <span>⏰</span> <span>Best Travel Times</span>
+            </div>
+            <div class="space-y-2 max-h-64 overflow-y-auto">
+              <!-- Filled dynamically -->
+            </div>
+          </div>
+
+          <!-- Personal Carbon Tracker - Collapsible -->
+          <div class="glass-card rounded-2xl overflow-hidden">
+            <button id="carbonToggle" class="w-full p-4 flex items-center justify-between hover:bg-opacity-80 transition-all" style="background: var(--surface);">
+              <div class="font-semibold flex items-center gap-2">
+                <span>📊</span> <span>Your Impact</span>
+              </div>
+              <span id="carbonToggleIcon">▼</span>
+            </button>
+            <div id="carbonContent" class="hidden p-4 pt-0">
+              <div class="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                  <div class="small-text mb-1" style="color: var(--text-secondary);">Total CO₂</div>
+                  <div id="totalCo2Saved" class="text-lg font-semibold" style="color: var(--primary);">0 kg</div>
+                </div>
+                <div>
+                  <div class="small-text mb-1" style="color: var(--text-secondary);">This Month</div>
+                  <div id="routesThisMonth" class="text-lg font-semibold">0 routes</div>
+                </div>
+              </div>
+              <div class="pt-2 border-t" style="border-color: var(--border);">
+                <div class="small-text mb-2" style="color: var(--text-secondary);">Achievements:</div>
+                <div class="flex flex-wrap gap-2" id="achievementBadges">
+                  <!-- Achievement badges -->
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Weather Forecast Timeline - Collapsible -->
+          <div class="glass-card rounded-2xl overflow-hidden">
+            <button id="forecastToggle" class="w-full p-4 flex items-center justify-between hover:bg-opacity-80 transition-all" style="background: var(--surface);">
+              <div class="font-semibold flex items-center gap-2">
+                <span>📅</span> <span>24h Forecast</span>
+              </div>
+              <span id="forecastToggleIcon">▼</span>
+            </button>
+            <div id="forecastContent" class="hidden p-4 pt-0">
+              <div id="forecastTimeline" class="space-y-1 max-h-48 overflow-y-auto">
+                <div class="text-center small-text" style="color: var(--text-secondary);">No forecast data</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Charts - Collapsible -->
+          <div class="glass-card rounded-2xl overflow-hidden">
+            <button id="chartsToggle" class="w-full p-4 flex items-center justify-between hover:bg-opacity-80 transition-all" style="background: var(--surface);">
+              <div class="font-semibold flex items-center gap-2">
+                <span>📈</span> <span>Route Metrics</span>
+              </div>
+              <span id="chartsToggleIcon">▼</span>
+            </button>
+            <div id="chartsContent" class="hidden p-4 pt-0">
+              <div class="grid grid-cols-1 gap-3">
+                <div>
+                  <div class="small-text mb-1" style="color: var(--text-secondary);">Temperature</div>
+                  <canvas id="tempChart" height="100"></canvas>
+                </div>
+                <div>
+                  <div class="small-text mb-1" style="color: var(--text-secondary);">Wind Speed</div>
+                  <canvas id="windChart" height="100"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button id="exportBtn" class="animated-btn w-full px-4 py-2 rounded-xl">Export PDF</button>
+        </section>
+
+        <!-- Right Column - Educational Resources -->
+        <section class="lg:col-span-1 flex flex-col gap-4 order-3 lg:order-2">
+          <!-- Educational Resources -->
+          <div class="glass-card rounded-2xl overflow-hidden">
+            <button id="eduToggle" class="w-full p-4 flex items-center justify-between hover:bg-opacity-80 transition-all" style="background: var(--surface);">
+              <div class="font-semibold flex items-center gap-2">
+                <span>📚</span> <span>Learn & Resources</span>
+              </div>
+              <span id="eduToggleIcon">▼</span>
+            </button>
+            <div id="eduContent" class="hidden p-4 pt-0">
+              <div class="space-y-3">
+                <div class="p-3 rounded-lg" style="background: var(--bg); border: 1px solid var(--border);">
+                  <div class="font-semibold text-sm mb-1">🌍 Understanding Air Quality</div>
+                  <div class="text-xs" style="color: var(--text-secondary);">
+                    AQI levels: Good (1) = Safe, Moderate (3) = Sensitive groups, Poor (4-5) = Unhealthy. Check AQI before outdoor activities.
+                  </div>
+                </div>
+                <div class="p-3 rounded-lg" style="background: var(--bg); border: 1px solid var(--border);">
+                  <div class="font-semibold text-sm mb-1">☀️ UV Index Guide</div>
+                  <div class="text-xs" style="color: var(--text-secondary);">
+                    Low (0-2): Minimal protection. Moderate (3-5): Some protection. High (6-7): Protection essential. Very High (8+): Avoid sun.
+                  </div>
+                </div>
+                <div class="p-3 rounded-lg" style="background: var(--bg); border: 1px solid var(--border);">
+                  <div class="font-semibold text-sm mb-1">🌱 Reducing Carbon Footprint</div>
+                  <div class="text-xs" style="color: var(--text-secondary);">
+                    Choose shorter routes, combine trips, and consider alternative transport. Every route matters for the environment.
+                  </div>
+                </div>
+                <div class="p-3 rounded-lg" style="background: var(--bg); border: 1px solid var(--border);">
+                  <div class="font-semibold text-sm mb-1">🌧️ Weather & Driving</div>
+                  <div class="text-xs" style="color: var(--text-secondary);">
+                    Rain reduces visibility and increases stopping distance. Plan routes during clear weather when possible.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Enhanced Environmental Alerts -->
+          <div id="envAlertsPanel" class="hidden glass-card p-4 rounded-2xl">
+            <div class="font-semibold mb-3 flex items-center gap-2">
+              <span>⚠️</span> <span>Environmental Alerts</span>
+            </div>
+            <div class="text-xs mb-2" style="color: var(--text-secondary);">Shows alerts after planning a route</div>
+            <div id="envAlertsList" class="space-y-2">
+              <!-- Filled dynamically after route planning -->
+            </div>
+          </div>
+        </section>
+
+      <!-- Map panel -->
+      <section class="lg:col-span-2 relative order-2 lg:order-3">
+        <div id="map" class="w-full h-[70vh] lg:h-[86vh] rounded-2xl shadow-glass overflow-hidden"></div>
+        <button id="fullscreenBtn" class="absolute top-4 right-4 glass-btn px-3 py-2 rounded-xl text-sm z-[400] flex items-center gap-2">
+          <span>⛶</span> <span>Fullscreen</span>
+        </button>
+      </section>
+    </main>
+
+    <!-- Toasts -->
+    <div id="toastContainer" class="fixed bottom-4 left-1/2" style="transform: translateX(-50%); z-index: 1000;"></div>
+  </div>
+
+  <script>
+    window.__HAS_WEATHER_KEY__ = {{ 'true' if has_weather_key else 'false' }};
+    
+    // Install PWA prompt
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      // Show install button
+      const installBtn = document.createElement('button');
+      installBtn.className = 'glass-btn px-4 py-2 rounded-xl text-sm';
+      installBtn.innerHTML = '📱 Install App';
+      installBtn.style.position = 'fixed';
+      installBtn.style.bottom = '20px';
+      installBtn.style.right = '20px';
+      installBtn.style.zIndex = '1000';
+      installBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+      installBtn.addEventListener('click', async () => {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          const { outcome } = await deferredPrompt.userChoice;
+          console.log('Install outcome:', outcome);
+          deferredPrompt = null;
+          installBtn.remove();
+        }
+      });
+      document.body.appendChild(installBtn);
+    });
+  </script>
+  <script src="/static/script.js"></script>
+</body>
+</html>
+
+
